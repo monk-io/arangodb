@@ -148,3 +148,5 @@ swagger-ui.js
 swagger-ui.js.map
 
 *.local.*
+lib/Activities/docu/build/
+lib/Activities/docu/venv/
