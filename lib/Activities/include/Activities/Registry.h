@@ -23,13 +23,15 @@
 
 #include "Activities/ActivityHandle.h"
 #include "Activities/ActivityId.h"
-#include "Activities/IRegistryMetrics.h"
 #include "Containers/Concurrent/metrics.h"
+#include "Activities/Activity.h"
 
 #include "Basics/ErrorT.h"
 #include "Basics/Guarded.h"
+#include "Containers/Concurrent/Registry.h"
 
 #include "Inspection/Status.h"
+#include "Registry.h"
 
 #include <velocypack/SharedSlice.h>
 
@@ -38,26 +40,21 @@
 
 namespace arangodb::activities {
 
-struct Registry {
-  explicit Registry() = default;
-  Registry(Registry const&) = delete;
-  Registry(Registry&&) = delete;
-  auto operator=(Registry const&) = delete;
-  auto operator=(Registry&&) = delete;
+struct ActivityPtr {
+  std::shared_ptr<Activity> item;
+  using Snapshot = Activity::Snapshot;
 
+  auto snapshot() -> Snapshot {
+    // TODO error when item == nullptr
+    return item->snapshot();
+  }
+  auto set_to_deleted() -> void { item = nullptr;}
+};
+
+using ThreadRegistry = containers::ThreadRegistry<ActivityPtr>;
+ 
+struct Registry : containers::Registry<ActivityPtr> {
   struct [[nodiscard]] ScopedCurrentlyExecutingActivity;
-
-  auto setMetrics(std::shared_ptr<IRegistryMetrics> metrics) -> void;
-  auto garbageCollect() -> void;
-
-  /**
-     Delete all dangling activities, including dangling parents after deleting
-     child.
-
-     Is  currently only used in tests. Goes over registry several times until no
-     more activites can be deleted any more. Will be worked on in COR-582.
-   */
-  auto garbageCollectAll() -> void;
 
   static auto currentlyExecutingActivity() noexcept -> ActivityHandle {
     return _currentlyExecutingActivity;
@@ -71,14 +68,18 @@ struct Registry {
   auto makeActivityWithParent(ActivityHandle parent, Args&&... args)
       -> T::HandleType {
     auto id = _activityIdCounter.fetch_add(1);
-    auto activity =
-        std::make_shared<T>(id, std::move(parent), std::forward<Args>(args)...);
+    struct ThreadRegistryGuard {
+      ThreadRegistryGuard(Registry& registry)
+          : _registry{ThreadRegistry::make(registry.get_metrics())} {
+        registry.add(_registry);
+      }
 
-    _registry.doUnderLock([this, &activity](auto&& reg) {
-      reg.emplace_front(activity);
-      increment_total_nodes();
-      increment_registered_nodes();
-    });
+      std::shared_ptr<ThreadRegistry> _registry;
+    };
+    static thread_local auto registry_guard = ThreadRegistryGuard{*this};
+    ThreadRegistry& registry = *registry_guard._registry; // &ThreadRegistry
+    auto activity = std::make_shared<T>(id, std::move(parent), std::forward<Args>(args)...);
+    registry.add([&]() { return ActivityPtr{.item=activity};});
 
     return activity;
   }
@@ -90,17 +91,12 @@ struct Registry {
 
   auto snapshot()
       -> errors::ErrorT<inspection::Status, velocypack::SharedSlice>;
-  auto size() -> size_t;
+  // auto size() -> size_t;
 
  private:
-  auto increment_total_nodes() -> void;
-  auto increment_registered_nodes() -> void;
-  auto store_registered_nodes(std::uint64_t count) -> void;
 
   static thread_local ActivityHandle _currentlyExecutingActivity;
-  Guarded<std::deque<ActivityHandle>> _registry;
   std::atomic<ActivityId> _activityIdCounter{0};
-  std::shared_ptr<IRegistryMetrics> _metrics{nullptr};
 };
 
 struct [[nodiscard]] Registry::ScopedCurrentlyExecutingActivity {

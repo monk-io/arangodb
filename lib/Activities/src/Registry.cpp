@@ -29,71 +29,61 @@
 
 namespace arangodb::activities {
 
-auto Registry::increment_total_nodes() -> void {
-  if (_metrics != nullptr) {
-    _metrics->increment_total_nodes();
-  }
-}
+// auto Registry::increment_total_nodes() -> void {
+//   if (_metrics != nullptr) {
+//     _metrics->increment_total_nodes();
+//   }
+// }
 
-auto Registry::increment_registered_nodes() -> void {
-  if (_metrics != nullptr) {
-    _metrics->increment_registered_nodes();
-  }
-}
+// auto Registry::increment_registered_nodes() -> void {
+//   if (_metrics != nullptr) {
+//     _metrics->increment_registered_nodes();
+//   }
+// }
 
-auto Registry::store_registered_nodes(std::uint64_t count) -> void {
-  if (_metrics != nullptr) {
-    _metrics->store_registered_nodes(count);
-  }
-}
+// auto Registry::store_registered_nodes(std::uint64_t count) -> void {
+//   if (_metrics != nullptr) {
+//     _metrics->store_registered_nodes(count);
+//   }
+// }
 
-auto Registry::setMetrics(std::shared_ptr<IRegistryMetrics> metrics) -> void {
-  _metrics = std::move(metrics);
-}
+// auto Registry::setMetrics(std::shared_ptr<IRegistryMetrics> metrics) -> void
+// {
+//   _metrics = std::move(metrics);
+// }
 
-auto Registry::garbageCollect() -> void {
-  _registry.doUnderLock([this](auto&& reg) {
-    std::erase_if(reg, [](auto&& a) { return a.use_count() == 1; });
-    store_registered_nodes(reg.size());
-  });
-}
+// auto Registry::garbageCollect() -> void {
+//   _registry.doUnderLock([this](auto&& reg) {
+//     std::erase_if(reg, [](auto&& a) { return a.use_count() == 1; });
+//     store_registered_nodes(reg.size());
+//   });
+// }
 
-auto Registry::garbageCollectAll() -> void {
-  _registry.doUnderLock([this](auto&& reg) {
-    size_t deletedCount = 1;
-    while (deletedCount > 0) {
-      deletedCount =
-          std::erase_if(reg, [](auto&& a) { return a.use_count() == 1; });
-      store_registered_nodes(reg.size());
-    }
-  });
-}
+// auto Registry::snapshot()
+//     -> errors::ErrorT<inspection::Status, velocypack::SharedSlice> {
+//   return _registry.doUnderLock([](auto&& reg) {
+//     VPackBuilder builder;
+//     {
+//       auto array = VPackArrayBuilder(&builder);
+//       for (auto&& a : reg) {
+//         if (a.use_count() == 1) {
+//           continue;
+//         }
+//         auto res = a->snapshot(builder);
+//         if (!res.ok()) {
+//           return errors::ErrorT<inspection::Status,
+//                                 velocypack::SharedSlice>::error(res.error());
+//         }
+//       }
+//     }
+//     return errors::ErrorT<inspection::Status, velocypack::SharedSlice>::ok(
+//         builder.sharedSlice());
+//   });
+// }
 
-auto Registry::snapshot()
-    -> errors::ErrorT<inspection::Status, velocypack::SharedSlice> {
-  return _registry.doUnderLock([](auto&& reg) {
-    VPackBuilder builder;
-    {
-      auto array = VPackArrayBuilder(&builder);
-      for (auto&& a : reg) {
-        if (a.use_count() == 1) {
-          continue;
-        }
-        auto res = a->snapshot(builder);
-        if (!res.ok()) {
-          return errors::ErrorT<inspection::Status,
-                                velocypack::SharedSlice>::error(res.error());
-        }
-      }
-    }
-    return errors::ErrorT<inspection::Status, velocypack::SharedSlice>::ok(
-        builder.sharedSlice());
-  });
-}
-
-auto Registry::size() -> size_t {
-  return _registry.doUnderLock([](auto&& reg) { return reg.size(); });
-}
+// auto Registry::size() -> size_t {
+//   return _registry.doUnderLock([](auto&& reg) { return reg.size(); });
+// }
 
 Registry::ScopedCurrentlyExecutingActivity::ScopedCurrentlyExecutingActivity(
     ActivityHandle activity) noexcept {
