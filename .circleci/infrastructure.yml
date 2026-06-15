@@ -471,13 +471,13 @@ workflows:
           context: [ circleci-token ]
 
       - build-ubuntu-build-image:
-          resource-class: arm.large
+          resource-class: arm.2xlarge
           name: aarch64-build-image
           arch: arm64
           requires: [cancel-redundant-pipelines]
 
       - build-ubuntu-build-image:
-          resource-class: large
+          resource-class: 2xlarge+
           name: x64-build-image
           arch: amd64
           requires: [cancel-redundant-pipelines]
