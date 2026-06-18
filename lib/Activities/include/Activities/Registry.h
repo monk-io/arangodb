@@ -49,15 +49,15 @@ struct ActivityPtr {
 
   using Snapshot = Activity::Snapshot;
 
-  auto snapshot() -> Snapshot {
+  auto snapshot() -> std::optional<Snapshot> {
     if (auto shared = item.lock()) {
       return shared->snapshot();
     } else {
-      // TODO
-      return Snapshot{};
+      return std::nullopt;
     }
   }
-  // TODO
+  // Does not need to do anything. Marked-for-deletion activities get an
+  // owned activity already in the custom shared_ptr deleter in ActivityOwner
   auto set_to_deleted() -> void { }
 };
 

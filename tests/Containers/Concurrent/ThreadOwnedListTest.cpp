@@ -53,14 +53,21 @@ std::size_t InstanceCounterValue::instanceCounter = 0;
 struct NodeData : InstanceCounterValue {
   int number;
   bool isDeleted = false;
+  bool hasSnapshot = true;
 
-  NodeData(int number) : number{number} {}
+  NodeData(int number, bool hasSnapshot = true)
+      : number{number}, hasSnapshot{hasSnapshot} {}
 
   struct Snapshot {
     int number;
     bool operator==(Snapshot const&) const = default;
   };
-  auto snapshot() -> Snapshot { return Snapshot{.number = number}; }
+  auto snapshot() -> std::optional<Snapshot> {
+    if (not hasSnapshot) {
+      return std::nullopt;
+    }
+    return Snapshot{.number = number};
+  }
   auto set_to_deleted() -> void { isDeleted = true; };
 };
 
@@ -88,7 +95,7 @@ TEST_F(ThreadOwnedListTest, adds_a_promise) {
   auto node = registry->add([]() { return NodeData{2}; });
 
   EXPECT_EQ(nodes_in_registry(registry),
-            (std::vector<NodeData::Snapshot>{node->data.snapshot()}));
+            (std::vector<NodeData::Snapshot>{node->data.snapshot().value()}));
 
   // make sure registry is cleaned up
   registry->mark_for_deletion(node);
@@ -111,10 +118,11 @@ TEST_F(ThreadOwnedListTest, iterates_over_all_promises) {
   auto* second_node = registry->add([]() { return NodeData{9}; });
   auto* third_node = registry->add([]() { return NodeData{10}; });
 
-  EXPECT_EQ(nodes_in_registry(registry),
-            (std::vector<NodeData::Snapshot>{third_node->data.snapshot(),
-                                             second_node->data.snapshot(),
-                                             first_node->data.snapshot()}));
+  EXPECT_EQ(
+      nodes_in_registry(registry),
+      (std::vector<NodeData::Snapshot>{third_node->data.snapshot().value(),
+                                       second_node->data.snapshot().value(),
+                                       first_node->data.snapshot().value()}));
 
   // make sure registry is cleaned up
   registry->mark_for_deletion(first_node);
@@ -130,11 +138,29 @@ TEST_F(ThreadOwnedListTest, iterates_in_another_thread_over_all_promises) {
   auto* third_node = registry->add([]() { return NodeData{3}; });
 
   std::thread([&]() {
-    EXPECT_EQ(nodes_in_registry(registry),
-              (std::vector<NodeData::Snapshot>{third_node->data.snapshot(),
-                                               second_node->data.snapshot(),
-                                               first_node->data.snapshot()}));
+    EXPECT_EQ(
+        nodes_in_registry(registry),
+        (std::vector<NodeData::Snapshot>{third_node->data.snapshot().value(),
+                                         second_node->data.snapshot().value(),
+                                         first_node->data.snapshot().value()}));
   }).join();
+
+  // make sure registry is cleaned up
+  registry->mark_for_deletion(first_node);
+  registry->mark_for_deletion(second_node);
+  registry->mark_for_deletion(third_node);
+}
+
+TEST_F(ThreadOwnedListTest, iterates_only_over_promises_with_a_snapshot) {
+  auto registry = MyList::make();
+
+  auto* first_node = registry->add([]() { return NodeData{5, false}; });
+  auto* second_node = registry->add([]() { return NodeData{9, true}; });
+  auto* third_node = registry->add([]() { return NodeData{10, false}; });
+
+  EXPECT_EQ(
+      nodes_in_registry(registry),
+      (std::vector<NodeData::Snapshot>{second_node->data.snapshot().value()}));
 
   // make sure registry is cleaned up
   registry->mark_for_deletion(first_node);
@@ -149,14 +175,16 @@ TEST_F(ThreadOwnedListTest, marked_promises_are_deleted_in_garbage_collection) {
 
   registry->mark_for_deletion(node_to_delete);
   EXPECT_EQ(nodes_in_registry(registry),
-            (std::vector<NodeData::Snapshot>{another_node->data.snapshot(),
-                                             node_to_delete->data.snapshot()}));
+            (std::vector<NodeData::Snapshot>{
+                another_node->data.snapshot().value(),
+                node_to_delete->data.snapshot().value()}));
   EXPECT_TRUE(node_to_delete->data.isDeleted);
   EXPECT_FALSE(another_node->data.isDeleted);
 
   registry->garbage_collect();
-  EXPECT_EQ(nodes_in_registry(registry),
-            (std::vector<NodeData::Snapshot>{another_node->data.snapshot()}));
+  EXPECT_EQ(
+      nodes_in_registry(registry),
+      (std::vector<NodeData::Snapshot>{another_node->data.snapshot().value()}));
 
   // make sure registry is cleaned up
   registry->mark_for_deletion(another_node);
@@ -173,8 +201,9 @@ TEST_F(ThreadOwnedListTest, garbage_collection_deletes_marked_promises) {
     registry->garbage_collect();
 
     EXPECT_EQ(nodes_in_registry(registry),
-              (std::vector<NodeData::Snapshot>{third_node->data.snapshot(),
-                                               second_node->data.snapshot()}));
+              (std::vector<NodeData::Snapshot>{
+                  third_node->data.snapshot().value(),
+                  second_node->data.snapshot().value()}));
 
     // clean up
     registry->mark_for_deletion(second_node);
@@ -189,9 +218,10 @@ TEST_F(ThreadOwnedListTest, garbage_collection_deletes_marked_promises) {
     registry->mark_for_deletion(second_node);
     registry->garbage_collect();
 
-    EXPECT_EQ(nodes_in_registry(registry),
-              (std::vector<NodeData::Snapshot>{third_node->data.snapshot(),
-                                               first_node->data.snapshot()}));
+    EXPECT_EQ(
+        nodes_in_registry(registry),
+        (std::vector<NodeData::Snapshot>{third_node->data.snapshot().value(),
+                                         first_node->data.snapshot().value()}));
 
     // clean up
     registry->mark_for_deletion(first_node);
@@ -206,9 +236,10 @@ TEST_F(ThreadOwnedListTest, garbage_collection_deletes_marked_promises) {
     registry->mark_for_deletion(third_node);
     registry->garbage_collect();
 
-    EXPECT_EQ(nodes_in_registry(registry),
-              (std::vector<NodeData::Snapshot>{second_node->data.snapshot(),
-                                               first_node->data.snapshot()}));
+    EXPECT_EQ(
+        nodes_in_registry(registry),
+        (std::vector<NodeData::Snapshot>{second_node->data.snapshot().value(),
+                                         first_node->data.snapshot().value()}));
 
     // clean up
     registry->mark_for_deletion(first_node);
@@ -239,8 +270,9 @@ TEST_F(ThreadOwnedListTest, another_thread_can_mark_a_promise_for_deletion) {
   std::thread([&]() { registry->mark_for_deletion(node_to_delete); }).join();
 
   registry->garbage_collect();
-  EXPECT_EQ(nodes_in_registry(registry),
-            (std::vector<NodeData::Snapshot>{another_node->data.snapshot()}));
+  EXPECT_EQ(
+      nodes_in_registry(registry),
+      (std::vector<NodeData::Snapshot>{another_node->data.snapshot().value()}));
 
   // clean up
   registry->mark_for_deletion(another_node);

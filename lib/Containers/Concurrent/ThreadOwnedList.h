@@ -156,7 +156,10 @@ struct ThreadOwnedList
     // (2) - this load synchronizes with store in (1) and (3)
     for (auto current = _head.load(std::memory_order_acquire);
          current != nullptr; current = current->next) {
-      function(current->data.snapshot());
+      auto snapshot = current->data.snapshot();
+      if (snapshot.has_value()) {
+        function(snapshot.value());
+      }
     }
   }
 

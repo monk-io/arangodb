@@ -119,8 +119,8 @@ struct Promise {
   ~Promise() = default;
 
   auto id() -> PromiseId { return PromiseId{this}; }
-  auto snapshot() -> Snapshot {
-    return PromiseSnapshot{
+  auto snapshot() -> std::optional<Snapshot> {
+    auto snapshot = PromiseSnapshot{
         .id = id(),
         .owning_thread =
             owning_thread.get_ref().value(),  // owning_thread is never changed,
@@ -129,6 +129,10 @@ struct Promise {
         .state = state.load(),
         .thread = running_thread.load(std::memory_order_acquire),
         .source_location = source_location.snapshot()};
+    if (snapshot.state == State::Deleted) {
+      return std::nullopt;
+    }
+    return snapshot;
   }
   auto set_to_deleted() -> void {
     state.store(State::Deleted, std::memory_order_relaxed);

@@ -23,8 +23,9 @@
 #pragma once
 
 #include <concepts>
+#include <optional>
 
 template<typename T>
 concept HasSnapshot = requires(T t) {
-  { t.snapshot() } -> std::convertible_to<typename T::Snapshot>;
+  { t.snapshot() } -> std::convertible_to<std::optional<typename T::Snapshot>>;
 };
