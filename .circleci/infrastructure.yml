@@ -373,13 +373,14 @@ jobs:
               "${TARGET}" IMAGE="${IMAGE}" ALLOW_ECR_PUSH=1
             TAG=$(cd /home/circleci/project/scripts/docker/build/linux && \
                   ./determine-tag.sh "${IMAGE}" "${ARCH_SUFFIX}")
-            echo "${TAG}"   > /tmp/build-image-tag.txt
-            echo "${IMAGE}" > /tmp/build-image-name.txt
+            mkdir -p /tmp/workspace/<< parameters.arch >>
+            echo "${TAG}"   > /tmp/workspace/<< parameters.arch >>/build-image-tag.txt
+            echo "${IMAGE}" > /tmp/workspace/<< parameters.arch >>/build-image-name.txt
       - persist_to_workspace:
-          root: /tmp
+          root: /tmp/workspace
           paths:
-            - build-image-tag.txt
-            - build-image-name.txt
+            - << parameters.arch >>/build-image-tag.txt
+            - << parameters.arch >>/build-image-name.txt
 
   build-ubuntu-build-image-manifest:
     docker:
@@ -402,8 +403,8 @@ jobs:
           name: Create multi-arch build image manifest
           command: |
             set -x
-            TAG="$(cat /tmp/build-image-tag.txt)"
-            IMAGE="$(cat /tmp/build-image-name.txt)"
+            TAG="$(cat /tmp/amd64/build-image-tag.txt)"
+            IMAGE="$(cat /tmp/amd64/build-image-name.txt)"
             make -C /home/circleci/project/scripts/docker/build/linux \
               manifest IMAGE="${IMAGE}" TAG="${TAG}" ALLOW_ECR_PUSH=1
       - when:
@@ -418,8 +419,8 @@ jobs:
                   ssh-keyscan github.com >> ~/.ssh/known_hosts
                   git config user.email "build-automation@arangodb.biz"
                   git config user.name "CircleCI Image Builder"
-                  TAG="$(cat /tmp/build-image-tag.txt)"
-                  IMAGE="$(cat /tmp/build-image-name.txt)"
+                  TAG="$(cat /tmp/amd64/build-image-tag.txt)"
+                  IMAGE="$(cat /tmp/amd64/build-image-name.txt)"
                   echo "${IMAGE}:${TAG}" > /home/circleci/project/scripts/docker/build/linux/amd64-build-tag.txt
                   sed -i "s|public\.ecr\.aws/b0b8h2r4/arangodb/ubuntubuildarangodb-[^\"]*|${IMAGE}:${TAG}|g" \
                     /home/circleci/project/.circleci/config.yml \
