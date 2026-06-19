@@ -87,6 +87,7 @@
 #include "Replication2/Storage/WAL/IFileWriter.h"
 #include "Replication2/Storage/WAL/LogPersistor.h"
 #include "Replication2/Storage/WAL/WalManager.h"
+#include "RocksDBEngine/Listeners/RocksDBActivitiesListener.h"
 #include "RocksDBEngine/Listeners/RocksDBBackgroundErrorListener.h"
 #include "RocksDBEngine/Listeners/RocksDBMetricsListener.h"
 #include "RocksDBEngine/Listeners/RocksDBThrottle.h"
@@ -1181,6 +1182,7 @@ void RocksDBEngine::start() {
   _dbOptions.listeners.push_back(_errorListener);
   _dbOptions.listeners.push_back(
       std::make_shared<RocksDBMetricsListener>(_metrics));
+  _dbOptions.listeners.push_back(std::make_shared<RocksDBActivitiesListener>());
 
   rocksdb::BlockBasedTableOptions tableOptions =
       _optionsProvider.getTableOptions();
