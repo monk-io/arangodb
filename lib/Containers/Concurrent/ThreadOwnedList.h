@@ -201,7 +201,7 @@ struct ThreadOwnedList
 
      Can only be called on the owning thread, crashes otherwise.
    */
-  auto garbage_collect() noexcept -> void {
+  auto garbage_collect() noexcept -> size_t {
     auto current_thread = basics::ThreadId::current();
     ADB_PROD_ASSERT(current_thread == thread) << std::format(
         "ThreadOwnedList::garbage_collect was called from thread {} but needs "
@@ -209,7 +209,7 @@ struct ThreadOwnedList
         inspection::json(current_thread), inspection::json(thread),
         (void*)this);
     auto guard = std::lock_guard(_mutex);
-    cleanup();
+    return cleanup();
   }
 
   /**
@@ -219,7 +219,7 @@ struct ThreadOwnedList
      list, calling this will therefore result in at least one
      marked-for-deletion node.
    */
-  auto garbage_collect_external() noexcept -> void {
+  auto garbage_collect_external() noexcept -> size_t {
     // acquire the lock. This prevents the owning thread and the observer
     // from accessing nodes. Note that the owing thread only adds new
     // nodes to the head of the list.
@@ -232,6 +232,7 @@ struct ThreadOwnedList
     Node* maybe_head_ptr = nullptr;
     Node* current;
     Node* next = _free_head.exchange(nullptr, std::memory_order_acquire);
+    size_t count = 0;
     while (next != nullptr) {
       current = next;
       next = next->next_to_free;
@@ -242,6 +243,7 @@ struct ThreadOwnedList
         }
         remove(current);
         delete current;
+        count++;
       } else {
         // if this is the head of the list, we cannot delete it because
         // additional nodes could have been added in the meantime
@@ -262,6 +264,7 @@ struct ThreadOwnedList
           current_head, maybe_head_ptr, std::memory_order_release,
           std::memory_order_acquire));
     }
+    return count;
   }
 
  private:
@@ -274,7 +277,8 @@ struct ThreadOwnedList
     }
   }
 
-  auto cleanup() noexcept -> void {
+  auto cleanup() noexcept -> size_t {
+    size_t count = 0;
     // (5) - this exchange synchronizes with compare_exchange_weak in (4)
     Node *current,
         *next = _free_head.exchange(nullptr, std::memory_order_acquire);
@@ -286,7 +290,9 @@ struct ThreadOwnedList
       }
       remove(current);
       delete current;
+      count++;
     }
+    return count;
   }
 
   auto remove(Node* node) -> void {

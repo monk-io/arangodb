@@ -66,7 +66,7 @@ TEST_F(ActivityPerformanceTest, bla) {
         latch.arrive_and_wait();
         while (not token.stop_requested()) {
           auto start = std::chrono::steady_clock::now();
-          registry.garbageCollect();
+          registry.run_external_cleanup();
           auto duration = std::chrono::steady_clock::now() - start;
           LOG_DEVEL << std::format(
               std::locale("en_US.UTF-8"), "time for gc: {:L}",

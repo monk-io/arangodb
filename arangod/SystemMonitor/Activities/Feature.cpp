@@ -99,13 +99,14 @@ void Feature::collectOptions(std::shared_ptr<options::ProgramOptions> options) {
 }
 
 velocypack::SharedSlice Feature::getData() const {
-  VPackBuilder builder;
-  builder.openArray();
-  registry.for_node([&](Activity::Snapshot activity) {
-    velocypack::serialize(builder, activity);
-  });
-  builder.close();
-  return builder.sharedSlice();
+  auto snap = registry.snapshot();
+  if (not snap.ok()) {
+    THROW_ARANGO_EXCEPTION_MESSAGE(
+        TRI_ERROR_INTERNAL,
+        std::string{"Error while serializing to VelocyPack: "} +
+            snap.error().error() + "\nPath: " + snap.error().path());
+  }
+  return snap.get();
 }
 
 velocypack::SharedSlice Feature::getCrashData() const { return getData(); }

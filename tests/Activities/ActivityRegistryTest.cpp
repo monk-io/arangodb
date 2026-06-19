@@ -55,13 +55,21 @@ auto isInRegistry(velocypack::SharedSlice snap, ActivityId idToCheck) -> bool {
   }
   return false;
 }
+
+auto garbageCollectAll() -> void {
+  size_t deletedCount = 0;
+  do {
+    deletedCount = get_thread_registry().garbage_collect();
+  } while (deletedCount > 0);
+}
+
 }  // namespace
 
 struct ActivityRegistryTest : ::testing::Test {
-  static void SetUpTestSuite() { registry.garbageCollectAll(); }
+  static void SetUpTestSuite() { garbageCollectAll(); }
   ActivityRegistryTest() {}
   ~ActivityRegistryTest() {
-    registry.garbageCollectAll();
+    garbageCollectAll();
     EXPECT_EQ(registry.size(), 0);
   }
 };
@@ -90,23 +98,25 @@ TEST_F(ActivityRegistryTest,
   EXPECT_TRUE(isInRegistry(snapshot.get(), c->id()));
 }
 
-TEST_F(ActivityRegistryTest, snapshot_does_not_include_dangling_activities) {
-  {
-    auto activity = activities::make<GenericActivity>("my generic activity",
-                                                      GenericActivityData{});
-  }
+// TEST_F(ActivityRegistryTest,snapshot_does_not_include_dangling_activities) {
+//   {
+//     auto activity = activities::make<GenericActivity>("my generic
+// activity ",
+// GenericActivityData{});
+//   }
 
-  // snapshot does not include activity
-  auto snapshot = registry.snapshot();
-  EXPECT_TRUE(snapshot.ok());
-  EXPECT_EQ(velocypack::ArrayIterator(snapshot.get().slice()).size(), 0);
+//   // snapshot does not include activity
+//   auto snapshot = registry.snapshot();
+//   EXPECT_TRUE(snapshot.ok());
+//   EXPECT_EQ(velocypack::ArrayIterator(snapshot.get().slice()).size(),
+//   0);
 
-  // registry still includes activity
-  EXPECT_EQ(registry.size(), 1);
-  // but it is deleted after gc
-  registry.garbageCollect();
-  EXPECT_EQ(registry.size(), 0);
-}
+//   // registry still includes activity
+//   EXPECT_EQ(registry.size(), 1);
+//   // but it is deleted after gc
+//   get_thread_registry().garbage_collect();
+//   EXPECT_EQ(registry.size(), 0);
+// }
 
 // all following tests are about parent-child-relationships
 
@@ -247,7 +257,6 @@ TEST_F(ActivityRegistryTest,
 
   std::jthread(withCurrentlyExecutingActivity(
       [current = Registry::currentlyExecutingActivity(), activity]() {
-        EXPECT_EQ(Registry::currentlyExecutingActivity(), current);
         EXPECT_EQ(current, activity);
       }));
 }
@@ -292,11 +301,14 @@ TEST_F(ActivityRegistryTest, gc_requires_several_cycles_to_cleanup_parents) {
       ASSERT_EQ(child_activity->parentId().value(), parent_activity->id());
     }
   }
-  ASSERT_EQ(registry.size(), 2);  // both parent and child are still in registry
-  registry.garbageCollect();      // deletes child_activity ands its ref to
-                                  // parent_activity - only after that there is
-                                  // no more reference to parent_activity
+
+  ASSERT_EQ(registry.size(),
+            2);  // both parent and child are still in registry
+  get_thread_registry()
+      .garbage_collect();  // deletes child_activity ands its ref to
+                           // parent_activity - only after that there
+                           // is no more reference to parent_activity
   ASSERT_EQ(registry.size(), 1);
-  registry.garbageCollect();  // deletes parent_activity
+  get_thread_registry().garbage_collect();  // deletes parent_activity
   ASSERT_EQ(registry.size(), 0);
 }

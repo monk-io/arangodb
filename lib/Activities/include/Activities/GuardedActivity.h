@@ -70,6 +70,7 @@ struct GuardedActivity : Activity {
   template<typename F>
   requires DataAccessor<F, Data>
   auto updateData(F&& mutator) { return _data.doUnderLock(std::move(mutator)); }
+
   using HandleType = std::shared_ptr<Derived>;
 
  protected:

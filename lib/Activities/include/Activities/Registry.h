@@ -40,22 +40,76 @@
 
 namespace arangodb::activities {
 
+  // We need a wrapper because the concurrent-registry needs a compile-time constant item type but our activities can have different types (all inheriting from Activity)
 struct ActivityPtr {
-  std::shared_ptr<Activity> item;
+  // either this (ownership in ActivityOwner and children)
+  std::weak_ptr<Activity> item;
+  // or this (after marked_for_deletion)
+  std::unique_ptr<Activity> owned;
+
   using Snapshot = Activity::Snapshot;
 
   auto snapshot() -> Snapshot {
-    // TODO error when item == nullptr
-    return item->snapshot();
+    if (auto shared = item.lock()) {
+      return shared->snapshot();
+    } else {
+      // TODO
+      return Snapshot{};
+    }
   }
-  auto set_to_deleted() -> void { item = nullptr;}
+  // TODO
+  auto set_to_deleted() -> void { }
 };
 
 using ThreadRegistry = containers::ThreadRegistry<ActivityPtr>;
- 
-struct Registry : containers::Registry<ActivityPtr> {
-  struct [[nodiscard]] ScopedCurrentlyExecutingActivity;
 
+template<typename T>
+struct ActivityOwner;
+  
+struct Registry : containers::Registry<ActivityPtr> {
+  auto get_thread_registry() noexcept -> ThreadRegistry& {
+    struct Guard {
+    explicit Guard(Registry& registry)
+      : _self{registry}, _registry{ThreadRegistry::make(registry.get_metrics())} {
+      registry.add(_registry);
+    }
+
+    Registry& _self;
+    std::shared_ptr<ThreadRegistry> _registry;
+  };
+  static thread_local auto guard = Guard{*this};
+  return *guard._registry;
+  }
+
+  template<typename T, typename... Args>
+  auto makeActivityWithParent(ActivityHandle parent, Args&&... args)
+    -> typename T::HandleType {
+    auto id = _activityIdCounter.fetch_add(1);
+    auto deleter =
+        std::make_shared<std::function<void(T*)>>([](T* ptr) { delete ptr; });
+    // The activity owner creates and owns the shared_ptr to the activity.
+    // We add a custom (at this point standard) deleter.
+    auto h = std::shared_ptr<T>(
+        new T{id, std::move(parent), std::forward<Args>(args)...},
+        [deleter](T* ptr) { (*deleter)(ptr); });
+    // We add an ActivityPtr (with a weak_ptr to the activity) to the registry.
+    auto node =
+        this->get_thread_registry().add([&]() { return ActivityPtr{.item = h}; });
+    // Now we can properly set the deleter: when the shared_ptr of activity goes out of scope,
+    // the node continues to own the activity and the node is marked for deletion.
+    // This way, the activity is deleted when the node is deleted.
+    *deleter = [node](T* ptr) {
+      node->data.owned = std::unique_ptr<Activity>(ptr);
+      node->list->mark_for_deletion(node); };
+    return h;
+  }
+  template<typename T, typename... Args>
+  auto makeActivity(Args&&... args) -> typename T::HandleType {
+    return makeActivityWithParent<T>(_currentlyExecutingActivity,
+                                     std::forward<Args>(args)...);
+  }
+
+  struct [[nodiscard]] ScopedCurrentlyExecutingActivity;
   static auto currentlyExecutingActivity() noexcept -> ActivityHandle {
     return _currentlyExecutingActivity;
   }
@@ -64,37 +118,11 @@ struct Registry : containers::Registry<ActivityPtr> {
     _currentlyExecutingActivity = std::move(activity);
   }
 
-  template<typename T, typename... Args>
-  auto makeActivityWithParent(ActivityHandle parent, Args&&... args)
-      -> T::HandleType {
-    auto id = _activityIdCounter.fetch_add(1);
-    struct ThreadRegistryGuard {
-      ThreadRegistryGuard(Registry& registry)
-          : _registry{ThreadRegistry::make(registry.get_metrics())} {
-        registry.add(_registry);
-      }
-
-      std::shared_ptr<ThreadRegistry> _registry;
-    };
-    static thread_local auto registry_guard = ThreadRegistryGuard{*this};
-    ThreadRegistry& registry = *registry_guard._registry; // &ThreadRegistry
-    auto activity = std::make_shared<T>(id, std::move(parent), std::forward<Args>(args)...);
-    registry.add([&]() { return ActivityPtr{.item=activity};});
-
-    return activity;
-  }
-  template<typename T, typename... Args>
-  auto makeActivity(Args&&... args) -> T::HandleType {
-    return makeActivityWithParent<T>(_currentlyExecutingActivity,
-                                     std::forward<Args>(args)...);
-  }
-
+  auto size() -> size_t;
   auto snapshot()
       -> errors::ErrorT<inspection::Status, velocypack::SharedSlice>;
-  // auto size() -> size_t;
 
  private:
-
   static thread_local ActivityHandle _currentlyExecutingActivity;
   std::atomic<ActivityId> _activityIdCounter{0};
 };
