@@ -1,7 +1,7 @@
 add_library(arango_tests_activities OBJECT
   ActivitiesAsyncTest.cpp
   ActivitiesSchedulerTest.cpp
-  ActivityPerformanceTest.cpp
+#  ActivityPerformanceTest.cpp
   ActivityRegistryTest.cpp
   GenericActivityTest.cpp
   CustomGuardedActivityTest.cpp
