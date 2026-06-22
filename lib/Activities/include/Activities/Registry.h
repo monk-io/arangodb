@@ -40,7 +40,9 @@
 
 namespace arangodb::activities {
 
-  // We need a wrapper because the concurrent-registry needs a compile-time constant item type but our activities can have different types (all inheriting from Activity)
+// We need a wrapper because the concurrent-registry needs a compile-time
+// constant item type but our activities can have different types (all
+// inheriting from Activity)
 struct ActivityPtr {
   // either this (ownership in ActivityOwner and children)
   std::weak_ptr<Activity> item;
@@ -58,32 +60,33 @@ struct ActivityPtr {
   }
   // Does not need to do anything. Marked-for-deletion activities get an
   // owned activity already in the custom shared_ptr deleter in ActivityOwner
-  auto set_to_deleted() -> void { }
+  auto set_to_deleted() -> void {}
 };
 
 using ThreadRegistry = containers::ThreadRegistry<ActivityPtr>;
 
 template<typename T>
 struct ActivityOwner;
-  
+ 
 struct Registry : containers::Registry<ActivityPtr> {
   auto get_thread_registry() noexcept -> ThreadRegistry& {
     struct Guard {
-    explicit Guard(Registry& registry)
-      : _self{registry}, _registry{ThreadRegistry::make(registry.get_metrics())} {
-      registry.add(_registry);
-    }
+      explicit Guard(Registry& registry)
+          : _self{registry},
+          _registry{ThreadRegistry::make(registry.get_metrics())} {
+        registry.add(_registry);
+      }
 
-    Registry& _self;
-    std::shared_ptr<ThreadRegistry> _registry;
-  };
-  static thread_local auto guard = Guard{*this};
-  return *guard._registry;
+      Registry& _self;
+      std::shared_ptr<ThreadRegistry> _registry;
+    };
+    static thread_local auto guard = Guard{*this};
+    return *guard._registry;
   }
 
   template<typename T, typename... Args>
-  auto makeActivityWithParent(ActivityHandle parent, Args&&... args)
-    -> typename T::HandleType {
+  auto makeActivityWithParent(ActivityHandle parent, Args&&... args) ->
+      typename T::HandleType {
     auto id = _activityIdCounter.fetch_add(1);
     auto deleter =
         std::make_shared<std::function<void(T*)>>([](T* ptr) { delete ptr; });
@@ -93,14 +96,16 @@ struct Registry : containers::Registry<ActivityPtr> {
         new T{id, std::move(parent), std::forward<Args>(args)...},
         [deleter](T* ptr) { (*deleter)(ptr); });
     // We add an ActivityPtr (with a weak_ptr to the activity) to the registry.
-    auto node =
-        this->get_thread_registry().add([&]() { return ActivityPtr{.item = h}; });
-    // Now we can properly set the deleter: when the shared_ptr of activity goes out of scope,
-    // the node continues to own the activity and the node is marked for deletion.
-    // This way, the activity is deleted when the node is deleted.
+    auto node = this->get_thread_registry().add(
+        [&]() { return ActivityPtr{.item = h}; });
+    // Now we can properly set the deleter: when the shared_ptr of activity goes
+    // out of scope, the node continues to own the activity and the node is
+    // marked for deletion. This way, the activity is deleted when the node is
+    // deleted.
     *deleter = [node](T* ptr) {
       node->data.owned = std::unique_ptr<Activity>(ptr);
-      node->list->mark_for_deletion(node); };
+      node->list->mark_for_deletion(node);
+    };
     return h;
   }
   template<typename T, typename... Args>
