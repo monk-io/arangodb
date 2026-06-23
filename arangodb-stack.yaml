@@ -1,0 +1,91 @@
+namespace: arangodb
+
+stack:
+  defines: runnable
+  inherits: arangodb/base
+  metadata:
+    name: ArangoDB Standalone Stack
+    description: |
+      Production-oriented standalone ArangoDB deployment with persistent storage,
+      private networking, and root authentication enabled by a generated
+      deploy-time password. For stable production credentials, inherit this stack
+      and set arangodb-root-password with secret("arangodb-root-password") or
+      another plain secret name; do not declare MANIFEST secrets in the base.
+    tags: arangodb, database, document-database, graph-database, standalone, production
+    website: https://arangodb.com/
+    source: https://github.com/arangodb/arangodb
+    publisher: monk.io
+    icon: https://www.arangodb.com/wp-content/uploads/2016/05/favicon.png
+    private: false
+  variables:
+    arangodb-root-password:
+      type: string
+      env: ARANGO_ROOT_PASSWORD
+      value: <- random-uuid
+      description: Sensitive ArangoDB root password generated for self-contained stack deployment. Inheriting production templates should set secret("arangodb-root-password") or another plain secret name.
+    arangodb-no-auth:
+      type: string
+      env: ARANGO_NO_AUTH
+      value: "0"
+      description: Authentication remains enabled for the production-oriented stack; do not set to "1" outside local-only development.
+    storage-volume-name:
+      type: string
+      value: arangodb-stack
+      description: Name of the Monk volume subdirectory used for persistent ArangoDB database files in the standalone stack.
+    apps-volume-name:
+      type: string
+      value: arangodb-stack-apps
+      description: Name of the Monk volume subdirectory used for persistent ArangoDB Foxx application files in the standalone stack.
+  services:
+    arangodb:
+      container: arangodb
+      port: <- $arangodb-port
+      protocol: tcp
+      description: Private authenticated ArangoDB HTTP API endpoint for trusted Monk connections; it is not published locally and has no ingress route.
+
+stack-local:
+  defines: runnable
+  inherits: arangodb/base
+  metadata:
+    name: ArangoDB Standalone Local Stack
+    description: |
+      Local verification flavor for the standalone ArangoDB stack. It uses
+      persistent storage, disables authentication only for local smoke testing,
+      and publishes ArangoDB on a non-privileged host port for external checks.
+    tags: arangodb, database, document-database, graph-database, standalone, local
+    website: https://arangodb.com/
+    source: https://github.com/arangodb/arangodb
+    publisher: monk.io
+    icon: https://www.arangodb.com/wp-content/uploads/2016/05/favicon.png
+    private: false
+  variables:
+    arangodb-root-password:
+      type: string
+      env: ARANGO_ROOT_PASSWORD
+      value: ""
+      description: Sensitive ArangoDB root password. Empty is permitted only in this local-only no-auth verification flavor; inheriting protected local variants should set secret("arangodb-root-password") or another plain secret name.
+    arangodb-no-auth:
+      type: string
+      env: ARANGO_NO_AUTH
+      value: "1"
+      description: Disables authentication only for the local verification flavor so external smoke tests can call the API without a secret.
+    arangodb-host-port:
+      type: int
+      value: 18529
+      description: Non-privileged host port published by the local ArangoDB HTTP API endpoint.
+    storage-volume-name:
+      type: string
+      value: arangodb-stack-local
+      description: Name of the Monk volume subdirectory used for local persistent ArangoDB database files.
+    apps-volume-name:
+      type: string
+      value: arangodb-stack-local-apps
+      description: Name of the Monk volume subdirectory used for local persistent ArangoDB Foxx application files.
+  services:
+    arangodb:
+      container: arangodb
+      port: <- $arangodb-port
+      protocol: tcp
+      publish: true
+      host-port: <- $arangodb-host-port
+      description: Published local ArangoDB HTTP API endpoint used for external verification on a non-privileged host port.
