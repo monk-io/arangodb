@@ -1,0 +1,66 @@
+namespace: arangodb
+
+base:
+  defines: runnable
+  metadata:
+    name: ArangoDB
+    description: |
+      Reusable ArangoDB single-server runnable for Monk application stacks.
+      ArangoDB is the runtime data service itself and does not need an external
+      database, cache, or queue package. Inheriting templates should set a root
+      password or explicitly opt into no-auth mode for local-only development.
+    tags: arangodb, database, document-database, graph-database, key-value, nosql
+    website: https://arangodb.com/
+    source: https://github.com/arangodb/arangodb
+    publisher: monk.io
+    icon: https://www.arangodb.com/wp-content/uploads/2016/05/favicon.png
+    private: false
+  variables:
+    arangodb-image-tag:
+      type: string
+      value: "3.12"
+      description: Public Docker Hub ArangoDB image tag to run.
+    arangodb-port:
+      type: int
+      env: ARANGO_PORT
+      value: 8529
+      description: ArangoDB HTTP API port inside the container and Monk network.
+    arangodb-root-password:
+      type: string
+      env: ARANGO_ROOT_PASSWORD
+      value: ""
+      description: Sensitive ArangoDB root password. Inheriting secure templates must set secret("arangodb-root-password") or generate a deploy-time password; leave empty only when arangodb-no-auth is "1" for local-only development.
+    arangodb-no-auth:
+      type: string
+      env: ARANGO_NO_AUTH
+      value: "0"
+      description: Set to "1" only for local-only development to disable authentication in the official ArangoDB image.
+    storage-volume-name:
+      type: string
+      value: arangodb
+      description: Name of the Monk volume subdirectory used for persistent ArangoDB database files.
+    apps-volume-name:
+      type: string
+      value: arangodb-apps
+      description: Name of the Monk volume subdirectory used for persistent ArangoDB Foxx application files.
+  containers:
+    arangodb:
+      image: arangodb
+      image-tag: <- $arangodb-image-tag
+      paths:
+        - <- `${volume-path}/${storage-volume-name}:/var/lib/arangodb3`
+        - <- `${volume-path}/${apps-volume-name}:/var/lib/arangodb3-apps`
+      restart: unless-stopped
+  services:
+    arangodb:
+      container: arangodb
+      port: <- $arangodb-port
+      protocol: tcp
+      description: Private ArangoDB HTTP API endpoint for trusted Monk connections.
+  checks:
+    readiness:
+      code: >-
+        http-get("http://localhost:8529/_api/version") nil? not
+      period: 5
+      initialDelay: 10
+      attempts: 24

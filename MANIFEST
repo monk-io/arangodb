@@ -1,0 +1,4 @@
+LOAD arangodb.yaml
+LOAD arangodb-stack.yaml
+
+ENTRY arangodb/stack-local
