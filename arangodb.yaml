@@ -43,6 +43,9 @@ base:
       type: string
       value: arangodb-apps
       description: Name of the Monk volume subdirectory used for persistent ArangoDB Foxx application files.
+    self-path:
+      type: string
+      value: <- self-path
   containers:
     arangodb:
       image: arangodb
@@ -60,7 +63,7 @@ base:
   checks:
     readiness:
       code: >-
-        http-get("http://localhost:8529/_api/version") nil? not
+        http-get-service($self-path, "arangodb", "/_api/version") get-member("status") 200 equal?
       period: 5
       initialDelay: 10
       attempts: 24
